@@ -1,10 +1,10 @@
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from backend.config import JWT_SECRET_KEY
+from config import JWT_SECRET_KEY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
-from backend.config import get_db
+from config import get_db
 import jwt
 import os
 import logging

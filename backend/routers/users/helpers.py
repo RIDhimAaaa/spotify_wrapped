@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.sql import func
 
-from backend.config import supabase, supabase_admin
-from backend.models import Profile
+from config import supabase, supabase_admin
+from models import Profile
 from routers.users.schemas import ProfileUpdate, UserProfileResponse
 
 logger = logging.getLogger(__name__)

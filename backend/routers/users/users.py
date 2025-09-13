@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.get_current_user import get_current_user
-from backend.config import get_db
+from config import get_db
 from routers.users.schemas import ProfileUpdate, UserProfileResponse, ProfileImageUpload
 from routers.users.helpers import (
     get_or_create_user_profile,

@@ -4,7 +4,7 @@ from dependencies.get_current_user import get_current_user
 from routers.admin.schemas import UserListItem, UserListResponse, RoleUpdateResponse, UserRoleUpdate
 from routers.admin.helpers import get_paginated_users, get_user_by_id_admin, update_user_role_admin
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.config import get_db
+from config import get_db
 from typing import Optional
 import logging
 

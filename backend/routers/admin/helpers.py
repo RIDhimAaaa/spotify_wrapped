@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime
 
-from backend.config import supabase_admin
-from backend.models import Profile
+from config import supabase_admin
+from models import Profile
 from routers.admin.schemas import UserListItem, UserListResponse, RoleUpdateResponse
 from routers.users.helpers import get_all_user_profiles
 
