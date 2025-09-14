@@ -1,67 +1,60 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient.js'; // Corrected import path
+import { supabase } from '../supabaseClient.js'; // Make sure this path is correct
 
-export const useAuth = () => {
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // 1. Get the initial session. Supabase client automatically handles token refresh.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // 2. Listen for authentication state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // 3. This is the crucial part: Check for the SIGNED_IN event
-        if (event === 'SIGNED_IN' && session?.provider_token) {
-          // 4. If it's a new sign-in with Spotify, immediately send the tokens to our secure backend
-          await sendSpotifyTokensToBackend(session);
-        }
-        
-        // Update the session state for the UI
-        setSession(session);
-        setLoading(false);
-      }
-    );
-
-    // Cleanup subscription on component unmount
-    return () => subscription.unsubscribe();
-  }, []);
-
-  return { session, loading };
-};
-
-// Helper function to call our backend API
+// This is the helper function that calls our Edge Function
 async function sendSpotifyTokensToBackend(session) {
+  if (!session?.provider_token || !session?.provider_refresh_token) {
+    console.log("Provider tokens not found in this session event.");
+    return;
+  }
+
+  console.log("SIGNED_IN event detected. Sending Spotify tokens to Edge Function...");
+
   try {
-    const response = await fetch('/api/tokens/spotify', {
-      method: 'POST',
-      headers: {
-        // The Supabase JWT is the "App Key" for our own backend
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        // The Spotify tokens are the "Spotify Key"
+    const { error } = await supabase.functions.invoke('save-spotify-tokens', {
+      body: {
         access_token: session.provider_token,
         refresh_token: session.provider_refresh_token,
         expires_in: session.expires_in,
-      })
+      }
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Failed to store Spotify tokens');
+    if (error) {
+      throw error;
     }
 
-    console.log("Spotify tokens securely stored on the backend.");
-    // For enhanced security, you could consider clearing them from localStorage now,
-    // but the Supabase client library manages its own session storage effectively.
+    console.log("Successfully stored Spotify tokens via Edge Function.");
 
   } catch (error) {
-    console.error("Error sending Spotify tokens to backend:", error);
+    console.error("Error sending Spotify tokens to Edge Function:", error.message);
   }
 }
+
+// The main useAuth hook
+export const useAuth = () => {
+  const [session, setSession] = useState(null);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // onAuthStateChange is designed to handle the initial session as well.
+    // It fires an 'INITIAL_SESSION' event on page load if a user is logged in.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+
+        // This is the crucial part: only send tokens on the initial sign-in event
+        if (event === 'SIGNED_IN') {
+          await sendSpotifyTokensToBackend(session);
+        }
+      }
+    );
+
+    // Unsubscribe from the listener when the component unmounts
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { session, user, loading };
+};
