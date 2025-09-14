@@ -6,13 +6,13 @@ from config import Base
 import uuid
 
 
-# Association table for user roles (many-to-many)
-user_roles = Table(
-    'user_roles',
-    Base.metadata,
-    Column('user_id', UUID(as_uuid=True), ForeignKey('profiles.id'), primary_key=True),
-    Column('role_id', UUID(as_uuid=True), ForeignKey('roles.id'), primary_key=True)
-)
+# Association table for user roles (many-to-many) - commented out until Role model is created
+# user_roles = Table(
+#     'user_roles',
+#     Base.metadata,
+#     Column('user_id', UUID(as_uuid=True), ForeignKey('profiles.id'), primary_key=True),
+#     Column('role_id', UUID(as_uuid=True), ForeignKey('roles.id'), primary_key=True)
+# )
 
 
 class Profile(Base):
@@ -33,6 +33,18 @@ class Profile(Base):
     
     def __repr__(self):
         return f"<Profile(id={self.id}, email={self.email})>"
+
+
+class UserToken(Base):
+    __tablename__ = "user_tokens"
+
+    id = Column(UUID(as_uuid=True), ForeignKey('profiles.id'), primary_key=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+    def __repr__(self):
+        return f"<UserToken(id={self.id})>"
 
 
 

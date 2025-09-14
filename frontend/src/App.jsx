@@ -1,16 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-// --- Supabase Client Initialization ---
-// This section replaces the need for a separate supabaseClient.js file.
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// A check to ensure environment variables are loaded
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("Supabase URL or Anon Key is missing. Make sure to set them in your .env file.");
-}
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import React, { useEffect } from 'react';
+import { useAuth } from './hooks/useAuth';
+import { supabase } from './supabaseClient';
 
 
 // --- Style Injector Component ---
@@ -99,24 +89,7 @@ const StyleInjector = () => {
 
 // --- Main App Component ---
 function App() {
-  const [session, setSession] = useState(null);
-
-  useEffect(() => {
-    // Check for an active session when the component mounts
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-
-    // Listen for changes in authentication state (login/logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-      }
-    );
-
-    // Cleanup subscription on component unmount
-    return () => subscription.unsubscribe();
-  }, []);
+  const { session, loading } = useAuth();
 
   // Function to handle Spotify OAuth login
   async function handleLogin() {
@@ -145,7 +118,13 @@ function App() {
     <>
       <StyleInjector />
       <div className="container">
-        {session ? (
+        {loading ? (
+          // Show loading state while checking authentication
+          <div className="login-card">
+            <h1>Loading...</h1>
+            <p>Checking authentication status...</p>
+          </div>
+        ) : session ? (
           // Show this if the user is logged in
           <div className="dashboard">
             <h1>Welcome!</h1>
