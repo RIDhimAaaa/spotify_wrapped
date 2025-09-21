@@ -1,54 +1,75 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_db
 from dependencies.get_current_user import get_current_user
 from utils.spotify import make_spotify_request
 
 # Create a new router for all stat-related endpoints
-stats_router = APIRouter(prefix="/stats", tags=["stats"])
+stats_router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 @stats_router.get("/top/{item_type}")
 async def get_top_items(
-    # This defines a path parameter that must be either "artists" or "tracks"
     item_type: str,
-    # This defines optional query parameters with default values and validation
     time_range: str = Query("medium_term", enum=["short_term", "medium_term", "long_term"]),
     limit: int = Query(20, ge=1, le=50),
-    # These two lines secure the endpoint and provide a database session
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    Fetches the user's top items (artists or tracks) from the Spotify API
-    using our centralized, token-refreshing helper function.
+    Fetches the user's top items and transforms the data into a simple,
+    clean format for the frontend.
     """
-    # 1. Basic validation to ensure the item_type is correct
     if item_type not in ["artists", "tracks"]:
         raise HTTPException(status_code=400, detail="Invalid item type. Must be 'artists' or 'tracks'.")
 
-    # 2. Get the user's ID from the validated JWT payload
-    user_id = user.get('user_id')  # Changed from 'id' to 'user_id'
+    user_id = user.get('user_id')  # Note: using 'user_id' as per our auth implementation
     
     if not user_id:
         raise HTTPException(status_code=400, detail="User ID not found in token")
     
-    # 3. Prepare the specific Spotify endpoint and parameters for the request
     endpoint = f"/me/top/{item_type}"
     params = {"time_range": time_range, "limit": limit}
     
-    # 4. Call our powerful helper function.
-    #    All the complexity of token refreshing and making the actual API call
-    #    is handled by this one, clean line of code.
+    # 1. Get the full, messy data from Spotify
     spotify_data = await make_spotify_request(user_id, db, endpoint, params=params)
     
-    # 5. Return the data received from Spotify directly to the frontend.
-    return spotify_data
+    # 2. --- NEW: Transform the data ---
+    # Create an empty list to hold our clean data
+    cleaned_items = []
+    
+    # Loop through each item in the response from Spotify
+    for item in spotify_data.get('items', []):
+        if item_type == 'tracks':
+            # If it's a track, pull out only what we need
+            cleaned_item = {
+                "id": item.get('id'),
+                "name": item.get('name'),
+                # Get the names of all artists and join them with ", "
+                "artists": ", ".join([artist['name'] for artist in item.get('artists', [])]),
+                # Get the URL of the first (largest) album image
+                "image_url": item.get('album', {}).get('images', [{}])[0].get('url')
+            }
+            cleaned_items.append(cleaned_item)
+            
+        elif item_type == 'artists':
+            # If it's an artist, pull out only what we need
+            cleaned_item = {
+                "id": item.get('id'),
+                "name": item.get('name'),
+                # Get the URL of the first (largest) artist image
+                "image_url": item.get('images', [{}])[0].get('url'),
+                "genres": item.get('genres', [])
+            }
+            cleaned_items.append(cleaned_item)
+            
+    # 3. Return the clean list instead of the raw data
+    return cleaned_items
 
 @stats_router.get("/recently-played")
 async def get_recently_played(
     limit: int = Query(20, ge=1, le=50),
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get user's recently played tracks from Spotify.
@@ -81,7 +102,7 @@ async def get_recently_played(
 @stats_router.get("/profile")
 async def get_user_profile(
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get user's Spotify profile information.
@@ -109,7 +130,7 @@ async def get_user_profile(
 async def get_audio_features(
     track_id: str,
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get audio features for a specific track.
