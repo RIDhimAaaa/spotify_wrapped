@@ -4,9 +4,8 @@ from routers.users import users_router
 from routers.admin.admin import router as admin_router
 from routers.stats import stats_router
 
-
 app = FastAPI(
-    title="Supabase FastAPI Boilerplate",
+    title="Spotify Wrapped",
     description="A FastAPI application with Supabase authentication",
     version="1.0.0"
 )

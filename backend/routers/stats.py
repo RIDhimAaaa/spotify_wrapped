@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from backend.config import get_db
-from backend.dependencies.get_current_user import get_current_user
-from backend.utils.spotify import make_spotify_request
+from config import get_db
+from dependencies.get_current_user import get_current_user
+from utils.spotify import make_spotify_request
 
 # Create a new router for all stat-related endpoints
-stats_router = APIRouter(prefix="/", tags=["stats"])
+stats_router = APIRouter(prefix="/stats", tags=["stats"])
 
 @stats_router.get("/top/{item_type}")
 async def get_top_items(
@@ -27,7 +27,10 @@ async def get_top_items(
         raise HTTPException(status_code=400, detail="Invalid item type. Must be 'artists' or 'tracks'.")
 
     # 2. Get the user's ID from the validated JWT payload
-    user_id = user.get('id')
+    user_id = user.get('user_id')  # Changed from 'id' to 'user_id'
+    
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID not found in token")
     
     # 3. Prepare the specific Spotify endpoint and parameters for the request
     endpoint = f"/me/top/{item_type}"
@@ -36,7 +39,7 @@ async def get_top_items(
     # 4. Call our powerful helper function.
     #    All the complexity of token refreshing and making the actual API call
     #    is handled by this one, clean line of code.
-    spotify_data = make_spotify_request(user_id, db, endpoint, params=params)
+    spotify_data = await make_spotify_request(user_id, db, endpoint, params=params)
     
     # 5. Return the data received from Spotify directly to the frontend.
     return spotify_data
@@ -58,14 +61,14 @@ async def get_recently_played(
     Returns:
         User's recently played tracks data from Spotify API
     """
-    user_id = user.get('id')
+    user_id = user.get('user_id')
     
     params = {
         "limit": limit
     }
     
     try:
-        data = make_spotify_request(
+        data = await make_spotify_request(
             user_id=user_id,
             db=db,
             endpoint="/me/player/recently-played",
@@ -90,10 +93,10 @@ async def get_user_profile(
     Returns:
         User's Spotify profile data
     """
-    user_id = user.get('id')
+    user_id = user.get('user_id')
     
     try:
-        data = make_spotify_request(
+        data = await make_spotify_request(
             user_id=user_id,
             db=db,
             endpoint="/me"
@@ -119,10 +122,10 @@ async def get_audio_features(
     Returns:
         Audio features data for the specified track
     """
-    user_id = user.get('id')
+    user_id = user.get('user_id')
     
     try:
-        data = make_spotify_request(
+        data = await make_spotify_request(
             user_id=user_id,
             db=db,
             endpoint=f"/audio-features/{track_id}"
