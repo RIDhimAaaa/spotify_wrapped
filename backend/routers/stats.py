@@ -154,3 +154,57 @@ async def get_audio_features(
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching audio features: {str(e)}")
+
+# --- NEW ENDPOINT FOR VIBE ANALYSIS ---
+
+@stats_router.get("/vibe")
+async def get_vibe_analysis(
+    time_range: str = Query("medium_term", enum=["short_term", "medium_term", "long_term"]),
+    limit: int = Query(50, ge=1, le=50), # We use up to 50 tracks for a good sample size
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Analyzes the audio features of a user's top tracks to determine their
+    current listening "vibe".
+    """
+    user_id = user.get('user_id')
+
+    # 1. First, get the user's top tracks using our helper function.
+    top_tracks_endpoint = "/me/top/tracks"
+    top_tracks_params = {"time_range": time_range, "limit": limit}
+    top_tracks_data = await make_spotify_request(user_id, db, top_tracks_endpoint, params=top_tracks_params)
+
+    # 2. Extract the IDs of all the tracks from the response.
+    track_ids = [track['id'] for track in top_tracks_data.get('items', []) if track.get('id')]
+    if not track_ids:
+        # Handle cases where the user has no listening history for the time range.
+        return {"message": "No top tracks found to analyze for this period."}
+
+    # 3. Next, get the audio features for all of those tracks in a single API call.
+    audio_features_endpoint = "/audio-features"
+    audio_features_params = {"ids": ",".join(track_ids)}
+    audio_features_data = await make_spotify_request(user_id, db, audio_features_endpoint, params=audio_features_params)
+
+    features_list = audio_features_data.get('audio_features', [])
+    # Filter out any potential null entries from the response
+    features_list = [f for f in features_list if f]
+    if not features_list:
+        raise HTTPException(status_code=404, detail="Could not retrieve audio features for the tracks.")
+
+    # 4. Calculate the average for each "vibe" metric.
+    total_tracks = len(features_list)
+    avg_danceability = sum(f['danceability'] for f in features_list) / total_tracks
+    avg_energy = sum(f['energy'] for f in features_list) / total_tracks
+    avg_valence = sum(f['valence'] for f in features_list) / total_tracks  # Fixed: added division
+    avg_acousticness = sum(f['acousticness'] for f in features_list) / total_tracks
+    
+    # 5. Return the calculated vibe as a simple, clean JSON object.
+    return {
+        "time_range": time_range,
+        "tracks_analyzed": total_tracks,
+        "danceability": round(avg_danceability * 100), # Return as a percentage
+        "energy": round(avg_energy * 100),
+        "positivity": round(avg_valence * 100), # Renamed for clarity
+        "acousticness": round(avg_acousticness * 100),
+    }
