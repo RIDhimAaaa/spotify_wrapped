@@ -184,7 +184,22 @@ async def get_vibe_analysis(
     # 3. Next, get the audio features for all of those tracks in a single API call.
     audio_features_endpoint = "/audio-features"
     audio_features_params = {"ids": ",".join(track_ids)}
-    audio_features_data = await make_spotify_request(user_id, db, audio_features_endpoint, params=audio_features_params)
+    
+    try:
+        audio_features_data = await make_spotify_request(user_id, db, audio_features_endpoint, params=audio_features_params)
+    except HTTPException as e:
+        if e.status_code == 403:
+            # Handle case where user doesn't have permission for audio-features
+            return {
+                "error": "Insufficient permissions",
+                "message": "Your Spotify account doesn't have access to audio features. This might be because you're using a restricted Spotify app or don't have the required scopes.",
+                "suggestion": "Contact the app administrator to ensure your account has the necessary permissions.",
+                "time_range": time_range,
+                "tracks_found": len(track_ids)
+            }
+        else:
+            # Re-raise other HTTP exceptions
+            raise e
 
     features_list = audio_features_data.get('audio_features', [])
     # Filter out any potential null entries from the response
@@ -207,4 +222,57 @@ async def get_vibe_analysis(
         "energy": round(avg_energy * 100),
         "positivity": round(avg_valence * 100), # Renamed for clarity
         "acousticness": round(avg_acousticness * 100),
+    }
+
+# --- SIMPLER VIBE ENDPOINT WITHOUT AUDIO FEATURES ---
+
+@stats_router.get("/vibe-simple")
+async def get_simple_vibe_analysis(
+    time_range: str = Query("medium_term", enum=["short_term", "medium_term", "long_term"]),
+    limit: int = Query(50, ge=1, le=50),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Analyzes the user's top tracks without requiring audio features API access.
+    Uses genre and popularity data instead.
+    """
+    user_id = user.get('user_id')
+
+    # Get user's top tracks
+    top_tracks_endpoint = "/me/top/tracks"
+    top_tracks_params = {"time_range": time_range, "limit": limit}
+    top_tracks_data = await make_spotify_request(user_id, db, top_tracks_endpoint, params=top_tracks_params)
+
+    tracks = top_tracks_data.get('items', [])
+    if not tracks:
+        return {"message": "No top tracks found to analyze for this period."}
+
+    # Analyze based on available data
+    total_tracks = len(tracks)
+    total_popularity = sum(track.get('popularity', 0) for track in tracks)
+    avg_popularity = total_popularity / total_tracks if total_tracks > 0 else 0
+
+    # Collect genres from artists
+    all_genres = []
+    for track in tracks:
+        for artist in track.get('artists', []):
+            artist_genres = artist.get('genres', [])
+            all_genres.extend(artist_genres)
+
+    # Count genre frequency
+    genre_count = {}
+    for genre in all_genres:
+        genre_count[genre] = genre_count.get(genre, 0) + 1
+
+    # Get top genres
+    top_genres = sorted(genre_count.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    return {
+        "time_range": time_range,
+        "tracks_analyzed": total_tracks,
+        "average_popularity": round(avg_popularity),
+        "top_genres": [{"genre": genre, "count": count} for genre, count in top_genres],
+        "analysis_type": "simplified",
+        "note": "This analysis uses track popularity and genres instead of audio features"
     }

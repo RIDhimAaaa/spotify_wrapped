@@ -30,13 +30,13 @@ async def _refresh_spotify_token(user_id: str, db: AsyncSession) -> UserToken:
     print(f"Token found. Expires at: {token_record.expires_at}")
     
     # Check if the token is within 5 minutes of expiring for safety
-    # We use timezone.utc to make the comparison timezone-aware
-    current_time = datetime.now(timezone.utc)
+    # Convert current time to naive UTC for comparison with database stored time
+    current_time = datetime.now(timezone.utc).replace(tzinfo=None)
     expires_at = token_record.expires_at
     
-    # Make sure expires_at is timezone-aware
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    # Ensure expires_at is naive (it should be since we store it as naive)
+    if expires_at.tzinfo is not None:
+        expires_at = expires_at.replace(tzinfo=None)
     
     if current_time >= expires_at - timedelta(minutes=5):
         print(f"Spotify token for user {user_id} is expiring. Refreshing...")
@@ -63,8 +63,9 @@ async def _refresh_spotify_token(user_id: str, db: AsyncSession) -> UserToken:
         
         # Update the token record in the database
         token_record.access_token = new_token_data['access_token']
-        # Ensure the new expiry time is timezone-aware (UTC)
-        token_record.expires_at = datetime.now(timezone.utc) + timedelta(seconds=new_token_data['expires_in'])
+        # Store as naive datetime (remove timezone info for database compatibility)
+        new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=new_token_data['expires_in'])
+        token_record.expires_at = new_expires_at.replace(tzinfo=None)
         
         # Commit changes with async session
         await db.commit()
@@ -112,6 +113,13 @@ async def make_spotify_request(user_id: str, db: AsyncSession, endpoint: str, me
             print("Received 401 Unauthorized - token might be invalid")
             print(f"Response body: {response.text}")
             raise HTTPException(status_code=401, detail="Invalid token")
+        
+        if response.status_code == 403:
+            print("Received 403 Forbidden - insufficient permissions/scopes")
+            print(f"Response body: {response.text}")
+            print(f"Endpoint: {url}")
+            print("This usually means the Spotify app doesn't have the required scopes or permissions")
+            raise HTTPException(status_code=403, detail="Insufficient permissions for this Spotify endpoint")
         
         response.raise_for_status()  # Raises an exception for bad responses (4xx or 5xx)
         return response.json()
